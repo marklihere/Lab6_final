@@ -38,10 +38,11 @@ void GPIO_INIT(void) {
     // PD0 = RED LED
     // PD1 = GREEN LED
     // PD2 = Yellow LED
-		GPIOD->DIR |= 0x00;          // PD[2:0] input, we sink current to turn on
+		GPIOD->DIR |= 0x07;          // PD[2:0] output, but we sink current into TM4C to turn on
 		GPIOD->AFSEL |= 0x00;        // disable alt func on PB0
-		GPIOD->PUR |= 0x07;          // default off, write 0 to turn on LED
+		GPIOD->PUR |= 0x07;          // write 0 to turn on LED
     GPIOD->DEN |= 0x07;          // enable digital I/O on PB0
+		GPIOD->DATA |= 0x7;          // turn off all LEDs by default
 		
 		// Port E
 		GPIOE->DIR |= 0xFD;  // PE[1] is input, PE[0] is output, PE[2] is output
