@@ -1,9 +1,10 @@
-#include "mytm4c123gh6pm.h"
-#include "init.h"
-#include "LCD.c"
+#include "tm4c123gh6pm.h"
+#include "init.h"  // Initialization routines
+#include "LCD.c"   // LCD CMD/DATA / INIT routines
 
 #define SSI_SR_RNE 0x00000004 // SSI Rx FIFO Not Empty
 #define SSI_SR_TFE 0x00000001 // SSI Tx FIFO Empty
+// hardcoded boundary points for red/green/yellow buttons
 #define rxmax 0xBC9
 #define rxmin 0x516
 #define rymax 0x5E2
@@ -17,17 +18,19 @@
 #define gymax 0x7FD
 #define gymin 0x670
 
-
+// running store of most recent 100 presses, averaged to increase accuracy
 unsigned short xarray[100];
 unsigned short yarray[100];
-int xtotal = 0;
-int ytotal = 0;
-int r = 0;  // status of red button
-int g = 0;  // status of green button
-int y = 0;  // status of yellow button
+int xtotal = 0;  // actual x-coordinate after summing and dividing by valid number of array entries if less than 100
+int ytotal = 0;  // actual y-coordinate after summing and dividing by valid number of array entries if less than 100
+int r = 0;  // status of red button, 0 = off, 1 = on
+int g = 0;  // status of green button, 0 = off, 1 = on
+int y = 0;  // status of yellow button, 0 = off, 1 = on
+int i = 0;  // array index
 
-int i = 0;
-
+//----------------------------------------
+// Toggle LED functions
+//----------------------------------------
 void yellowLED(void) {
   if (y==1) {  // LED is on, turn it off, yellow is PD2
 	  GPIOD->DATA |= 0x4;  // X1XX
@@ -35,7 +38,6 @@ void yellowLED(void) {
 		GPIOD->DATA &= 0xFB; // 1011  Turns it on
 	}
 }
-
 
 void redLED(void) {
   if (r==1) {  // LED is on, turn it off, red is PD0
@@ -53,56 +55,62 @@ void greenLED(void) {
 	}
 }
 
-void mysetArea(unsigned short x1, unsigned short x2, unsigned short y1, unsigned short y2) {
+//----------------------------------------
+// LCD functions
+//----------------------------------------
+void setArea(unsigned short x1, unsigned short x2, unsigned short y1, unsigned short y2) {
   // Column Address Set 0x2A
 	// columns range from 0 to 239
-	mywriteCmd(0x2A);
-	mywriteDat2(x1);
-	mywriteDat2(x2);
+	writeCmd(0x2A);
+	writeDat2(x1);
+	writeDat2(x2);
 	
 	// Page Address Set 0x2B
 	// pages range from 0 to 319
-	mywriteCmd(0x2B);
-	mywriteDat2(y1);
-	mywriteDat2(y2);
+	writeCmd(0x2B);
+	writeDat2(y1);
+	writeDat2(y2);
 }
 
 
-void mywriteColor(unsigned short color) {
+void writeColor(unsigned short color) {
 	int i;
 	int cols;
 	int rows;
 	cols = 240;
 	rows = 320;
 
-  mywriteCmd(0x2C);
+  writeCmd(0x2C);
 	for(i = 0; i < cols*rows; i++)
-	  mywriteDat2(color);
+	  writeDat2(color);
 }
 
 	
+
+// Toggle Button draw Fill functions
 void fillGreen(void) {
-  mysetArea(67, 137, 128, 193);
+  setArea(67, 137, 128, 193);
   if (g==0)
-		mywriteColor(green);
+		writeColor(green);
 	else
-		mywriteColor(black);
+		writeColor(black);
 }
 
 void fillRed(void) {
-  mysetArea(67, 137, 45, 110);
+  setArea(67, 137, 45, 110);
 	if (r==0)
-	  mywriteColor(red);
+	  writeColor(red);
 	else
-		mywriteColor(black);
+		writeColor(black);
 }
 void fillYellow(void) {
-  mysetArea(67, 137, 211, 277);
+  setArea(67, 137, 211, 277);
 	if (y==0)
-  	mywriteColor(yellow);
+  	writeColor(yellow);
 	else
-		mywriteColor(black);
+		writeColor(black);
 }
+
 
 void GPIO_INT_INIT(void) {
 	// enable interrupts
@@ -111,29 +119,35 @@ void GPIO_INT_INIT(void) {
 	NVIC->ISER[0] = 1 << 4;      // Enable interrupt 4 [GPIOE]
 }
 
+//----------------------------------------
+// Touchscreen functions
+//----------------------------------------
+// Gets an x-coordinate from the LCD, puts into xarray[]
 void getX(void) {
-	// Temporary variables to store data as we read
+	// Temporary variable to store data as we read
 	unsigned short data = 0;
 
-	GPIOE->DATA &= 0xFE; // TS chip select low
+	GPIOE->DATA &= 0xFE; // Touchscreen Chip Select, enable Tx/Rx
   sendAfterWaiting(0xD0);  // read x-coord
   data = sendAfterWaiting(0) << 5;   // sends 16-bits of 0
-	data += sendAfterWaiting(0) >> 3;   // sends 16-bits of 0
-	GPIOE->DATA |= 0x1; // TS chip select high
+	data += sendAfterWaiting(0) >> 3;  // sends 16-bits of 0
+	GPIOE->DATA |= 0x1; // Touchscreen Chip Select, disenable Tx/Rx
 	xarray[i%100] = data;
 }
 
+// Gets an y-coordinate from the LCD, puts into yarray[]
 void getY(void) {
-	// Temporary variables to store data as we read
+	// Temporary variable to store data as we read
 	unsigned short data = 0;
 	
-	GPIOE->DATA &= 0xFE; // chip select low
-  sendAfterWaiting(0x90);  // read x-coord
+	GPIOE->DATA &= 0xFE; // Touchscreen Chip Select, enable Tx/Rx
+  sendAfterWaiting(0x90);  // read y-coord
   data = sendAfterWaiting(0) << 5;   // sends 16-bits of 0
-	data += sendAfterWaiting(0) >> 3;   // sends 16-bits of 0
-	GPIOE->DATA |= 0x1; // chip select high
+	data += sendAfterWaiting(0) >> 3;  // sends 16-bits of 0
+	GPIOE->DATA |= 0x1; // Touchscreen Chip Select, disenable Tx/Rx
 	yarray[i%100] = data;
 }
+
 
 
 // Triggers on touchscreen press
@@ -142,9 +156,9 @@ void GPIOE_Handler(void) {
 	int x = 0;
 	int divideby = 0;
 
+	//-----------------------------------------
 	// GET TOUCHED COORDINATES
   // while PENIRQ is low, continuously load touchscreen values into our array
-	// GPIOE->DATA &= 0xFE;    // put CS low at start of Tx
 	while ((GPIOE->DATA & 0x2) == 0x0) {  // polling PE[1], the interrupt
 	  getX();   
 	  getY();   
@@ -153,16 +167,16 @@ void GPIOE_Handler(void) {
 	// return chip select to high
 	// because this means we have already released the touchscreen and should
 	// be calculating a coordinate that was touched
-	// GPIOE->DATA |= 0x1;    // put CS high at end of Tx
-	
+
+	//-----------------------------------------
 	// PROCESS TOUCH
 	// sum all array values, divide by divideby variable
 	
-		// check if i > 100, if so, we change our divide by value when averaging the actual position
-		// because this means someone touched and held for longer than 100 read cycles
-		// in which case we need to keep filling array (loop around) and then average
-		// the entire array, Ex: touch & hold & drag, then we want to read the final release coordinate
-		// and not the initial touch point
+	// check if i > 100, if so, we change our divide by value when averaging the actual position
+	// because this means someone touched and held for longer than 100 read cycles
+	// in which case we need to keep filling array (loop around) and then average
+	// the entire array, Ex: touch & hold & drag, then we want to read the final release coordinate
+	// and not the initial touch point
 	if (i > 100) divideby = 100;
 		else divideby = i;
 	
@@ -187,40 +201,24 @@ void GPIOE_Handler(void) {
 	// invalidates entire temporary xarray and yarray read tables
 	i = 0;
 	
-	GPIOE->DATA &= 0xFB; // LCD CS = 0  1011  PE[2]
+	//-----------------------------------------
+	// update LCD
+	GPIOE->DATA &= 0xFB;  // LCD ChipSelect, enable LCD Tx/Rx
 		if(xtotal > rxmin && xtotal < rxmax && ytotal > rymin && ytotal < rymax) {
-			if(r==1) {  // r == 1 means already filled
 				fillRed();
   			redLED();
-				r = 0;
-			} else {
-				fillRed();
-				redLED();
-				r = 1;
-			}
+				r = !r;
 		} else if (xtotal > yxmin && xtotal < yxmax && ytotal > yymin && ytotal < yymax) {
-			if(y==1) {
 				fillYellow();
 				yellowLED();
-				y = 0;
-			} else {
-				fillYellow();
-				yellowLED();
-				y = 1;
-			}
+				y = !y;
 		} else if (xtotal > gxmin && xtotal < gxmax && ytotal > gymin && ytotal < gymax) {
-			if(g==1) {
 				fillGreen();
 				greenLED();
-				g = 0;
-			} else {
-				fillGreen();
-				greenLED();
-				g = 1;
-			}
+				g = !g;
 		}
-	GPIOE->DATA |= 0x4; // LCD CS = 1, done writing to LCD
-	GPIOE->ICR |= 0x2;    // clear interrupt on pin [1]
+	GPIOE->DATA |= 0x4;  // LCD ChipSelect, disable LCD Tx/Rx
+	GPIOE->ICR |= 0x2;   // clear interrupt on pin [1]
 }
 
 int main(void)
@@ -230,27 +228,27 @@ int main(void)
 	INIT_SSI0();
 
 	// Enable LCD
-	GPIOE->DATA &= 0xFB; // LCD CS = 0  1011  PE[2] = 0
+	GPIOE->DATA &= 0xFB; // LCD ChipSelect, enable LCD Tx/Rx
 	LCD_Init();
 	
 	GPIO_INT_INIT();  // Enable interrupts
 	
 	// Draw Initial screen
-	mysetArea(0, 239, 0, 319);
-	mywriteColor(black);	
-	mysetArea(62, 142, 40, 115);
-	mywriteColor(red);
-  mysetArea(67, 137, 45, 110);
-	mywriteColor(black);
-	mysetArea(62, 142, 123, 198);
-	mywriteColor(green);
-  mysetArea(67, 137, 128, 193);
-	mywriteColor(black);
-	mysetArea(62, 142, 206, 281);
-	mywriteColor(yellow);
-  mysetArea(67, 137, 211, 277);
-	mywriteColor(black);
-	GPIOE->DATA |= 0x4; // LCD CS = 1  // 0100  setting PE[2] = 1
+	setArea(0, 239, 0, 319);
+	writeColor(black);	
+	setArea(62, 142, 40, 115);
+	writeColor(red);
+  setArea(67, 137, 45, 110);
+	writeColor(black);
+	setArea(62, 142, 123, 198);
+	writeColor(green);
+  setArea(67, 137, 128, 193);
+	writeColor(black);
+	setArea(62, 142, 206, 281);
+	writeColor(yellow);
+  setArea(67, 137, 211, 277);
+	writeColor(black);
+	GPIOE->DATA |= 0x4; // LCD ChipSelect, disable LCD Tx/Rx
 	while(1);
 
  }
