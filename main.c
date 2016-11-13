@@ -28,15 +28,30 @@ int y = 0;  // status of yellow button
 
 int i = 0;
 
-/*void mywriteTS(unsigned char CMD) {
-	// wait until FIFO is not busy and also FIFO is empty
-	while((SSI0b->SR & 0x11) != 0x01);
-	SSI0b->DR = CMD;
-	SSI0b->DR = 0x0;
-	SSI0b->DR = 0x0;
+void yellowLED(void) {
+  if (y==1) {  // LED is on, turn it off, yellow is PD2
+	  GPIOD->DATA |= 0x4;  // X1XX
+	} else {
+		GPIOD->DATA &= 0xFB; // 1011  Turns it on
+	}
 }
-*/
 
+
+void redLED(void) {
+  if (r==1) {  // LED is on, turn it off, red is PD0
+	  GPIOD->DATA |= 0x1;  // XXX1
+	} else {
+		GPIOD->DATA &= 0xFE; // 1110  Turns it on
+	}
+}
+
+void greenLED(void) {
+  if (g==1) {  // LED is on, turn it off, red is PD1
+	  GPIOD->DATA |= 0x2;  // XX1X
+	} else {
+		GPIOD->DATA &= 0xFD; // 1101  Turns it on
+	}
+}
 
 void mysetArea(unsigned short x1, unsigned short x2, unsigned short y1, unsigned short y2) {
   // Column Address Set 0x2A
@@ -65,18 +80,10 @@ void mywriteColor(unsigned short color) {
 	  mywriteDat2(color);
 }
 
-
-
-
-
-
-
-
-
 	
 void fillGreen(void) {
   mysetArea(67, 137, 128, 193);
-  if (g==1)
+  if (g==0)
 		mywriteColor(green);
 	else
 		mywriteColor(black);
@@ -84,14 +91,14 @@ void fillGreen(void) {
 
 void fillRed(void) {
   mysetArea(67, 137, 45, 110);
-	if (r==1)
+	if (r==0)
 	  mywriteColor(red);
 	else
 		mywriteColor(black);
 }
 void fillYellow(void) {
   mysetArea(67, 137, 211, 277);
-	if (y==1)
+	if (y==0)
   	mywriteColor(yellow);
 	else
 		mywriteColor(black);
@@ -108,11 +115,11 @@ void getX(void) {
 	// Temporary variables to store data as we read
 	unsigned short data = 0;
 
-	GPIOE->DATA &= 0xFE; // chip select low
+	GPIOE->DATA &= 0xFE; // TS chip select low
   sendAfterWaiting(0xD0);  // read x-coord
   data = sendAfterWaiting(0) << 5;   // sends 16-bits of 0
 	data += sendAfterWaiting(0) >> 3;   // sends 16-bits of 0
-	GPIOE->DATA |= 0x1; // chip select high
+	GPIOE->DATA |= 0x1; // TS chip select high
 	xarray[i%100] = data;
 }
 
@@ -182,42 +189,39 @@ void GPIOE_Handler(void) {
 	
 	GPIOE->DATA &= 0xFB; // LCD CS = 0  1011  PE[2]
 		if(xtotal > rxmin && xtotal < rxmax && ytotal > rymin && ytotal < rymax) {
-			if(r==1) {
-				r = 0;
+			if(r==1) {  // r == 1 means already filled
 				fillRed();
-				// redLED();
+  			redLED();
+				r = 0;
 			} else {
 				fillRed();
-				// redLED();
+				redLED();
 				r = 1;
 			}
 		} else if (xtotal > yxmin && xtotal < yxmax && ytotal > yymin && ytotal < yymax) {
 			if(y==1) {
-				y = 0;
 				fillYellow();
-				// yellowLED();
+				yellowLED();
+				y = 0;
 			} else {
 				fillYellow();
-				// yellowLED();
+				yellowLED();
 				y = 1;
 			}
 		} else if (xtotal > gxmin && xtotal < gxmax && ytotal > gymin && ytotal < gymax) {
 			if(g==1) {
 				fillGreen();
-				// greenLED();
+				greenLED();
 				g = 0;
 			} else {
 				fillGreen();
-				// greenLED();
+				greenLED();
 				g = 1;
 			}
 		}
-		GPIOE->DATA |= 0x4; // LCD CS = 1  // 0100  setting PE[2] = 1
-	
-	GPIOE->ICR |= 0x2;  // clear interrupt on pin [1]
+	GPIOE->DATA |= 0x4; // LCD CS = 1, done writing to LCD
+	GPIOE->ICR |= 0x2;    // clear interrupt on pin [1]
 }
-
-
 
 int main(void)
 {
@@ -225,12 +229,13 @@ int main(void)
 	GPIO_INIT();
 	INIT_SSI0();
 
-	
-	GPIOE->DATA &= 0xFB; // LCD CS = 0  1011  PE[2]
+	// Enable LCD
+	GPIOE->DATA &= 0xFB; // LCD CS = 0  1011  PE[2] = 0
 	LCD_Init();
-
-	GPIO_INT_INIT();
-	// disable touchscreen while we draw the LCD
+	
+	GPIO_INT_INIT();  // Enable interrupts
+	
+	// Draw Initial screen
 	mysetArea(0, 239, 0, 319);
 	mywriteColor(black);	
 	mysetArea(62, 142, 40, 115);
@@ -244,48 +249,8 @@ int main(void)
 	mysetArea(62, 142, 206, 281);
 	mywriteColor(yellow);
   mysetArea(67, 137, 211, 277);
-	mywriteColor(black);	
+	mywriteColor(black);
 	GPIOE->DATA |= 0x4; // LCD CS = 1  // 0100  setting PE[2] = 1
-
-
-	/*while(1) {
-		GPIOE->DATA &= 0xFB; // LCD CS = 0  1011  PE[2]
-		if(xtotal > rxmin && xtotal < rxmax && ytotal > rymin && ytotal < rymax) {
-			if(r==1) {
-				r = 0;
-				fillRed();
-				// redLED();
-			} else {
-				fillRed();
-				// redLED();
-				r = 1;
-			}
-		} else if (xtotal > yxmin && xtotal < yxmax && ytotal > yymin && ytotal < yymax) {
-			if(y==1) {
-				y = 0;
-				fillYellow();
-				// yellowLED();
-			} else {
-				fillYellow();
-				// yellowLED();
-				y = 1;
-			}
-		} else if (xtotal > gxmin && xtotal < gxmax && ytotal > gymin && ytotal < gymax) {
-			if(g==1) {
-				fillGreen();
-				// greenLED();
-				g = 0;
-			} else {
-				fillGreen();
-				// greenLED();
-				g = 1;
-			}
-		}
-		GPIOE->DATA |= 0x4; // LCD CS = 1  // 0100  setting PE[2] = 1
-
-  }
-	*/
-	
 	while(1);
 
  }
